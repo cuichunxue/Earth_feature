@@ -15,6 +15,15 @@ const STRINGS = {
   food: { ja: 'たべもの', en: 'Food', ko: '음식', zh: '美食' },
   secret: { ja: 'ひみつ', en: 'Fun fact', ko: '비밀', zh: '小秘密' },
   meetHere: { ja: 'ここで会える！', en: 'Find them here!', ko: '여기서 만나요!', zh: '在这里找找看！' },
+  countryAnimals: { ja: '🐾 この国の動物', en: '🐾 Animals of this country', ko: '🐾 이 나라의 동물', zh: '🐾 这个国家的动物' },
+  famousPlaces: { ja: '🏛️ 有名な場所', en: '🏛️ Famous places', ko: '🏛️ 유명한 곳', zh: '🏛️ 著名景点' },
+  animalGuide: { ja: 'どうぶつずかん', en: 'Animal guide', ko: '동물 도감', zh: '动物图鉴' },
+  animalGuideSub: {
+    ja: 'タップすると、その動物のところへ飛んでいくよ',
+    en: 'Tap an animal to fly to where it lives',
+    ko: '동물을 누르면 그곳으로 날아가요',
+    zh: '点一下，就能飞到它住的地方',
+  },
   comingSoon: {
     ja: 'この国のひみつカードは じゅんびちゅう！',
     en: 'This country’s secret card is coming soon!',

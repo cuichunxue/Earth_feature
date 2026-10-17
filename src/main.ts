@@ -15,7 +15,7 @@ const RAD_TO_DEG = 180 / Math.PI;
 let lang: Lang = detectLang();
 let countries: Country[] = [];
 /** いま開いているカード（言語を切りかえたときに作り直すため） */
-let openCard: { kind: 'country'; country: Country } | { kind: 'spot'; spot: FeatureSpot } | null = null;
+let openCard: { kind: 'country'; country: Country } | { kind: 'spot'; spot: FeatureSpot } | { kind: 'guide' } | null = null;
 
 const app = new GlobeApp($<HTMLCanvasElement>('globe'));
 
@@ -105,19 +105,83 @@ function tile(icon: string, label: string, value: string, extra?: string) {
   return d;
 }
 
-function spotChips(code: string) {
-  const spots = ALL_SPOTS.filter((s) => s.country === code);
+/** 国のカードの中の「動物」「有名な場所」のボタン */
+function spotSection(code: string, type: FeatureSpot['type']) {
+  const spots = uniqueSpots(ALL_SPOTS.filter((s) => s.country === code && s.type === type));
   if (!spots.length) return [];
-  const wrap = el('div', 'chips');
-  for (const s of spots) {
-    const b = el('button', 'chip' + (found.has(spotKey(s)) ? ' found' : ''), `${s.emoji} ${tr(s.name, lang)}`);
-    b.addEventListener('click', () => {
-      app.flyToSpot(s);
-      showSpot(s);
-    });
-    wrap.append(b);
+  const wrap = el('div', type === 'animal' ? 'animal-grid' : 'chips');
+  for (const s of spots) wrap.append(type === 'animal' ? animalButton(s) : spotChip(s));
+  return [el('div', 'section-title', t(type === 'animal' ? 'countryAnimals' : 'famousPlaces', lang)), wrap];
+}
+
+/** 同じ動物（名前が同じもの）は1つにまとめる */
+function uniqueSpots(spots: FeatureSpot[]) {
+  const seen = new Set<string>();
+  return spots.filter((s) => {
+    const k = spotKey(s);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function goToSpot(s: FeatureSpot) {
+  app.flyToSpot(s);
+  showSpot(s);
+}
+
+function spotChip(s: FeatureSpot) {
+  const b = el('button', 'chip' + (found.has(spotKey(s)) ? ' found' : ''), `${s.emoji} ${tr(s.name, lang)}`);
+  b.addEventListener('click', () => goToSpot(s));
+  return b;
+}
+
+function animalButton(s: FeatureSpot) {
+  const b = el('button', 'animal' + (found.has(spotKey(s)) ? ' found' : ''));
+  b.append(el('span', 'animal-emoji', s.emoji), el('span', 'animal-name', tr(s.name, lang)));
+  b.addEventListener('click', () => goToSpot(s));
+  return b;
+}
+
+/** ずかんにならべる国の順番（アジア → ヨーロッパ → アフリカ → アメリカ → オセアニア → 極地・海） */
+const GUIDE_ORDER = [
+  'JP', 'KR', 'CN', 'MN', 'IN', 'NP', 'TH', 'VN', 'MY', 'ID', 'PH', 'TR', 'SA', 'AE', 'RU',
+  'GB', 'FR', 'NL', 'DE', 'CH', 'IT', 'ES', 'GR', 'IS', 'NO',
+  'EG', 'MA', 'KE', 'TZ', 'CD', 'ZA', 'MG',
+  'CA', 'US', 'MX', 'BR', 'PE', 'EC', 'AR', 'CL',
+  'AU', 'NZ', 'GL', 'AQ', '',
+];
+
+/** どうぶつずかん：国ごとに、その国の動物をならべる */
+function showAnimalGuide() {
+  openCard = { kind: 'guide' };
+  const animals = uniqueSpots(ALL_SPOTS.filter((s) => s.type === 'animal'));
+  const byCountry = new Map<string, FeatureSpot[]>();
+  for (const a of animals) {
+    if (!byCountry.has(a.country)) byCountry.set(a.country, []);
+    byCountry.get(a.country)!.push(a);
   }
-  return [el('div', 'section-title', t('meetHere', lang)), wrap];
+  const body: HTMLElement[] = [el('div', 'guide-sub', t('animalGuideSub', lang))];
+  const rank = (code: string) => {
+    const i = GUIDE_ORDER.indexOf(code);
+    return i < 0 ? GUIDE_ORDER.length : i;
+  };
+  for (const [code, list] of [...byCountry].sort((a, b) => rank(a[0]) - rank(b[0]))) {
+    const country = code ? app.countryByCode(code) : null;
+    const title = country ? `${flagEmoji(country.alpha2)} ${countryName(country, lang)}` : code === 'AQ' ? `🧊 ${tr({ ja: '南極', en: 'Antarctica' }, lang)}` : `🌊 ${t('ocean', lang)}`;
+    const row = el('div', 'guide-row');
+    const head = el('button', 'guide-country', title);
+    if (country)
+      head.addEventListener('click', () => {
+        app.flyToCountry(country);
+        showCountry(country);
+      });
+    const grid = el('div', 'animal-grid');
+    for (const a of list) grid.append(animalButton(a));
+    row.append(head, grid);
+    body.push(row);
+  }
+  openSheet('🐾', t('animalGuide', lang), `⭐ ${[...found].filter((k) => animals.some((a) => spotKey(a) === k)).length} / ${animals.length}`, body);
 }
 
 function showCountry(country: Country | null) {
@@ -139,11 +203,11 @@ function showCountry(country: Country | null) {
     );
     const secret = el('div', 'secret');
     secret.append(el('div', 'tile-label', `⭐ ${t('secret', lang)}`), el('div', 'secret-text', tr(info.fact, lang)));
-    body.push(grid, secret);
+    body.push(grid, ...spotSection(country.alpha2 ?? '', 'animal'), secret);
   } else {
-    body.push(el('div', 'secret-text muted', t('comingSoon', lang)));
+    body.push(el('div', 'secret-text muted', t('comingSoon', lang)), ...spotSection(country.alpha2 ?? '', 'animal'));
   }
-  body.push(...spotChips(country.alpha2 ?? ''));
+  body.push(...spotSection(country.alpha2 ?? '', 'landmark'));
   openSheet(flagEmoji(country.alpha2), countryName(country, lang), '', body);
 }
 
@@ -189,12 +253,29 @@ function buildLabelSpecs(): LabelSpec[] {
     const showBelow = 1.45 + size * 8;
     const hideBelow = size > 0.05 ? 1 + size * 2.5 : undefined;
     specs.push({ text: countryName(c, lang), lat: c.labelLat, lon: c.labelLon, height, showBelow, hideBelow, style: 'country' });
-    // 国名の下に、小さく人口を書く（ひみつカードがある国だけ）
+    // 国名の下に、その国の動物の絵文字をならべる
+    let below = 1.0;
+    const emojis = [...new Set(ALL_SPOTS.filter((sp) => sp.type === 'animal' && sp.country === c.alpha2).map((sp) => sp.emoji))].slice(0, 4);
+    if (emojis.length) {
+      specs.push({
+        text: emojis.join(''),
+        lat: c.labelLat - RAD_TO_DEG * height * below,
+        lon: c.labelLon,
+        height: height * 0.85,
+        showBelow: Math.min(showBelow, 3.2),
+        hideBelow,
+        style: 'emoji',
+        anchorLat: c.labelLat,
+        anchorLon: c.labelLon,
+      });
+      below += 0.9;
+    }
+    // その下に、小さく人口を書く（ひみつカードがある国だけ）
     const info = c.alpha2 ? COUNTRY_INFO[c.alpha2] : undefined;
     if (info) {
       specs.push({
         text: `${t('population', lang)} ${formatPopulation(info.population, lang)}`,
-        lat: c.labelLat - RAD_TO_DEG * height * 1.05,
+        lat: c.labelLat - RAD_TO_DEG * height * (below + 0.05),
         lon: c.labelLon,
         height: height * 0.55,
         showBelow: Math.min(showBelow, 2.6),
@@ -234,6 +315,7 @@ async function refreshLabels() {
 // =====================================================================
 $('btn-zoom-in').addEventListener('click', () => app.zoomBy(0.65));
 $('btn-zoom-out').addEventListener('click', () => app.zoomBy(1 / 0.65));
+$('btn-animals').addEventListener('click', () => showAnimalGuide());
 $('btn-home').addEventListener('click', () => {
   closeSheet();
   app.goHome();
@@ -253,6 +335,7 @@ langSelect.addEventListener('change', () => {
   refreshLabels();
   if (openCard?.kind === 'country') showCountry(openCard.country);
   else if (openCard?.kind === 'spot') showSpot(openCard.spot);
+  else if (openCard?.kind === 'guide') showAnimalGuide();
 });
 applyStaticTexts(lang);
 renderFound();

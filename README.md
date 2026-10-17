@@ -38,7 +38,11 @@ src/
     earth.ts               地球の球体（陸がぷっくり盛り上がる）と大気の光
     stars.ts               またたく星空
     geo.ts                 緯度経度 ⇔ 3D座標 の変換
-    models.ts              ローポリの3Dモデル（ランドマーク・動物・木）を図形の組み合わせで作る
+    modelKit.ts            3Dモデル作りの道具箱（箱・円柱・球をまとめて1つの形にする）
+    models.ts              ランドマーク・景色・乗り物のローポリ3Dモデル
+    animals.ts             動物のローポリ3Dモデル（約65種。目・2トーン・もようまで作りこみ）
+    lifeLayer.ts           雲・飛行機・船・気球など、動くもの
+    touchControls.ts       指でつかんで回す・はじく・ピンチでズームする操作
     featureLayer.ts        モデルを地球の上に並べる（InstancedMesh でまとめて描く）
     labels.ts              地面に書かれた国名・首都名
 ```
@@ -53,6 +57,11 @@ src/
 - [ ] 6. ゲーム（Where in the world? / クイズ）
 - [ ] 7. 多言語対応とUI磨き込み
 - [ ] 8. 進捗保存
+
+## 開発用のページ
+
+- `npm run dev` のあと `http://localhost:5173/dev/gallery.html` を開くと、動物のモデルを一覧で見比べられます
+  （`?only=panda,koala&cols=2` のように、見たい動物だけにしぼれます）
 
 ## データの出典
 

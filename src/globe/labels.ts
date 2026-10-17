@@ -16,7 +16,7 @@ export interface LabelSpec {
   showBelow: number;
   /** カメラがこの距離より近いと消える（大きすぎる文字をかくす） */
   hideBelow?: number;
-  style: 'country' | 'capital' | 'sub';
+  style: 'country' | 'capital' | 'sub' | 'emoji';
   /** 遠くで文字を大きくするときの中心（国名の下の人口は、国名と一緒に動くように） */
   anchorLat?: number;
   anchorLon?: number;
@@ -64,8 +64,17 @@ export class LabelLayer {
       ctx.lineWidth = s.style === 'country' ? 10 : 7;
       ctx.strokeStyle = s.style === 'country' ? 'rgba(42,31,74,0.9)' : 'rgba(30,25,60,0.85)';
       ctx.fillStyle = s.style === 'capital' ? '#fff3b0' : s.style === 'sub' ? '#d9f1ff' : '#fffaf0';
-      ctx.strokeText(s.text, r.x + PAD, r.y + r.h / 2);
-      ctx.fillText(s.text, r.x + PAD, r.y + r.h / 2);
+      if (s.style === 'emoji') {
+        // 絵文字はふちどりせず、うすい影だけつける
+        ctx.shadowColor = 'rgba(20,15,40,0.55)';
+        ctx.shadowBlur = 6;
+        ctx.fillText(s.text, r.x + PAD, r.y + r.h / 2);
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+      } else {
+        ctx.strokeText(s.text, r.x + PAD, r.y + r.h / 2);
+        ctx.fillText(s.text, r.x + PAD, r.y + r.h / 2);
+      }
     });
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;

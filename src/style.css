@@ -226,6 +226,74 @@ body {
   margin-top: 12px;
 }
 
+/* ---------- 動物のボタン（大きな絵文字＋名前） ---------- */
+.animal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+.animal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px 7px;
+  border: 3px solid #e6dcc8;
+  border-radius: 18px;
+  background: #ffffff;
+  color: var(--ink);
+  font-family: var(--font);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.animal:active {
+  transform: scale(0.94);
+}
+.animal-emoji {
+  font-size: 34px;
+  line-height: 1.1;
+}
+.animal-name {
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+  line-break: strict;
+}
+.animal.found {
+  border-color: var(--sun);
+  background: #fff6cf;
+}
+.animal.found::after {
+  content: '⭐';
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  font-size: 16px;
+}
+.guide-sub {
+  font-size: 14px;
+  font-weight: 700;
+  opacity: 0.65;
+  margin-bottom: 4px;
+}
+.guide-row {
+  margin-top: 12px;
+}
+.guide-country {
+  margin: 0 0 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 /* ---------- 「はっけん！」のお知らせ ---------- */
 .toast {
   position: fixed;
@@ -333,10 +401,13 @@ body {
 }
 
 @media (max-width: 480px) {
+  .controls {
+    gap: 10px;
+  }
   .controls button {
-    width: 56px;
-    height: 56px;
-    font-size: 26px;
+    width: 54px;
+    height: 54px;
+    font-size: 25px;
   }
   #lang {
     top: auto;
