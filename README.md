@@ -13,6 +13,12 @@ npm run build    # 公開用のファイルを dist/ に作る
 `npm run dev` はスマホからも見られるように `--host` 付きで起動します。
 同じWi‑Fiのスマホで、表示された `Network: http://192.168.x.x:5173` を開いてください。
 
+## GitHub Pages で公開
+
+`.github/workflows/deploy.yml` が、プッシュのたびに自動で組み立てて公開します。
+最初に1回だけ、GitHub の **Settings → Pages → Build and deployment → Source** を
+**「GitHub Actions」** に変えてください（「Deploy from a branch」のままだと、組み立て前のファイルが表示されて地球が出ません）。
+
 ## ファイル構成
 
 ```
