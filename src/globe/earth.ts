@@ -8,7 +8,8 @@ const LAND_HEIGHT = 0.009;
 /** 色テクスチャ＋高さ地図を貼った地球本体 */
 export function createEarth(tex: CountryTexture): THREE.Mesh {
   // 細かく分割した球。陸の盛り上がり（displacement）をなめらかに見せるため
-  const geometry = new THREE.SphereGeometry(EARTH_RADIUS, 384, 192);
+  const touch = window.matchMedia('(pointer: coarse)').matches;
+  const geometry = touch ? new THREE.SphereGeometry(EARTH_RADIUS, 256, 128) : new THREE.SphereGeometry(EARTH_RADIUS, 384, 192);
   const material = new THREE.MeshStandardMaterial({
     map: tex.colorTexture,
     displacementMap: tex.heightTexture,

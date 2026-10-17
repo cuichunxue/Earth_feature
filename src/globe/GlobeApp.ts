@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { geoContains } from 'd3-geo';
 import type { Country } from '../data/countries';
 import type { FeatureSpot } from '../data/features';
@@ -10,6 +9,7 @@ import { latLonToVector3, vector3ToLatLon } from './geo';
 import { FeatureLayer } from './featureLayer';
 import { LabelLayer, type LabelSpec } from './labels';
 import { LifeLayer } from './lifeLayer';
+import { GlobeTouchControls } from './touchControls';
 
 const MIN_DISTANCE = 1.1; // いちばん近づいたときのカメラ距離（地球の中心から）
 const MAX_DISTANCE = 7;
@@ -31,7 +31,7 @@ interface CameraTween {
  * シーン・カメラ・操作（回転/ズーム）・タップで国やランドマークを選ぶ処理をまとめています。
  *
  * カメラは2つあります：
- *  - rig   : 指の操作（OrbitControls）で動く「見えないカメラ」。いつも地球の中心を向く。
+ *  - rig   : 指の操作（GlobeTouchControls）で動く「見えないカメラ」。いつも地球の中心を向く。
  *  - camera: 実際に画面を写すカメラ。rig の位置をもとに、近づいたときは地平線の方へかたむけて
  *            「地面を見下ろす」ような景色にします。
  */
@@ -39,7 +39,7 @@ export class GlobeApp {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
-  readonly controls: OrbitControls;
+  readonly controls: GlobeTouchControls;
   private rig = new THREE.PerspectiveCamera();
 
   /** 国がタップされたとき（海なら null）に呼ばれる */
@@ -66,14 +66,15 @@ export class GlobeApp {
   private shiftTarget = new THREE.Vector2();
 
   constructor(private canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // スマホは画面の点がとても細かいので、少しだけ荒く描いて動きをなめらかにする
+    const touch = window.matchMedia('(pointer: coarse)').matches;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, touch ? 1.6 : 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.camera = new THREE.PerspectiveCamera(40, 1, 0.005, 500);
     this.scene.add(this.camera);
     this.scene.background = new THREE.Color('#05061a');
-    this.rig.position.set(0, 1.0, HOME_DISTANCE);
 
     // ライト：全体をやさしく照らす光 ＋ カメラについてくる光（いつも見ている面が明るい）
     this.scene.add(new THREE.HemisphereLight('#ffffff', '#6a7aaa', 1.9));
@@ -81,15 +82,11 @@ export class GlobeApp {
     sun.position.set(-2, 2, 3);
     this.camera.add(sun);
 
-    this.controls = new OrbitControls(this.rig, canvas);
-    this.controls.enableDamping = true; // 指を離してもスーッと回り続ける
-    this.controls.dampingFactor = 0.06;
-    this.controls.enablePan = false;
+    this.controls = new GlobeTouchControls(canvas, this.rig, (x, y) => this.pickLatLon(x, y));
     this.controls.minDistance = MIN_DISTANCE;
     this.controls.maxDistance = MAX_DISTANCE;
-    this.controls.zoomSpeed = 0.9;
-    this.controls.autoRotate = true;
-    this.controls.addEventListener('start', () => this.markInteraction());
+    this.controls.distance = HOME_DISTANCE;
+    this.controls.onStart = () => this.markInteraction();
 
     this.scene.add(this.stars.points);
     this.setupTapPicking();
@@ -181,8 +178,21 @@ export class GlobeApp {
   private markInteraction() {
     this.lastInteraction = performance.now();
     this.controls.autoRotate = false;
-    this.tween = null;
+    if (this.tween) {
+      this.tween = null;
+      this.controls.syncFromRig();
+    }
   }
+
+  /** 画面の点が地球のどこ（緯度経度）に当たるか */
+  private pickLatLon(clientX: number, clientY: number) {
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hit = this.raycaster.intersectObject(this.pickSphere)[0];
+    return hit ? vector3ToLatLon(hit.point) : null;
+  }
+  private raycaster = new THREE.Raycaster();
 
   private animateCamera(toDir: THREE.Vector3, toDist: number, duration: number) {
     this.markInteraction();
@@ -211,6 +221,7 @@ export class GlobeApp {
     if (raw >= 1) {
       this.tween = null;
       this.lastInteraction = performance.now();
+      this.controls.syncFromRig();
     }
   }
 
@@ -311,17 +322,14 @@ export class GlobeApp {
     const now = performance.now();
     const dist = this.rig.position.length();
 
-    // 近づくほどゆっくり回る（ズームしたときに国が飛んでいかないように）
-    const altitude = (dist - EARTH_RADIUS) / (HOME_DISTANCE - EARTH_RADIUS);
-    this.controls.rotateSpeed = THREE.MathUtils.clamp(altitude, 0.03, 1) * 0.9;
-    this.controls.autoRotateSpeed = THREE.MathUtils.clamp(altitude, 0.05, 1) * 0.6;
-
-    if (this.spinEnabled && !this.tween && !this.controls.autoRotate && now - this.lastInteraction > IDLE_SPIN_DELAY) {
+    if (this.spinEnabled && !this.tween && !this.controls.autoRotate && !this.controls.isInteracting && now - this.lastInteraction > IDLE_SPIN_DELAY) {
       this.controls.autoRotate = true;
     }
 
+    this.timer.update();
+    const dt = this.timer.getDelta();
     if (this.tween) this.updateTween(now);
-    else this.controls.update();
+    else this.controls.update(dt);
     this.placeCamera();
 
     if (this.shift.distanceToSquared(this.shiftTarget) > 1e-7) {
@@ -329,9 +337,7 @@ export class GlobeApp {
       this.applyShift();
     }
 
-    this.timer.update();
     const t = this.timer.getElapsed();
-    const dt = this.timer.getDelta();
     this.stars.update(t);
     const far = smoothstep(1.35, HOME_DISTANCE, dist);
     const grow = Math.round((1 + far * 1.4) * 100) / 100;

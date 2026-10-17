@@ -274,3 +274,8 @@ loadCountries()
 
 // 開発中だけ、ブラウザのコンソールから app をさわれるようにする
 if (import.meta.env.DEV) Object.assign(window, { app });
+
+// iPhone の Safari は、ピンチでページ全体を拡大しようとするので止める（地球のズームだけにする）
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
