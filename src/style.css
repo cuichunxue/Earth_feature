@@ -57,49 +57,204 @@ body {
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
-/* ---------- 国の名前カード ---------- */
-.card {
+/* ---------- 「みつけた」バッジ ---------- */
+.badge {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  left: 14px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--sun);
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 16px;
+  box-shadow: var(--shadow);
+}
+.badge.pop {
+  animation: bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes bounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+/* ---------- 下から出てくるカード ---------- */
+.sheet {
   position: fixed;
   left: 50%;
-  bottom: calc(max(20px, env(safe-area-inset-bottom)) + 92px);
+  bottom: max(12px, env(safe-area-inset-bottom));
+  width: min(560px, calc(100vw - 24px));
+  max-height: min(56vh, 520px);
+  display: flex;
+  flex-direction: column;
   transform: translateX(-50%);
+  padding: 16px 18px 18px;
+  border-radius: 28px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  z-index: 5;
+}
+.sheet.hidden {
+  display: none;
+}
+.sheet.pop {
+  animation: sheet-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes sheet-in {
+  from { transform: translate(-50%, 40px) scale(0.9); opacity: 0; }
+  to { transform: translate(-50%, 0) scale(1); opacity: 1; }
+}
+.sheet-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: #efe6d6;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.sheet-head {
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: calc(100vw - 32px);
-  padding: 12px 26px 12px 18px;
-  border-radius: 999px;
-  background: var(--paper);
-  color: var(--ink);
-  font-size: clamp(22px, 5vw, 30px);
-  font-weight: 800;
-  box-shadow: var(--shadow);
-  white-space: nowrap;
-  pointer-events: none;
+  padding-right: 48px;
 }
-.card .flag {
-  font-size: 1.3em;
+.sheet-icon {
+  font-size: 54px;
   line-height: 1;
 }
-.card #country-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.sheet-title {
+  font-size: clamp(24px, 6vw, 32px);
+  font-weight: 800;
+  line-height: 1.1;
 }
-.card.hidden {
+.sheet-sub {
+  font-size: 16px;
+  font-weight: 700;
+  opacity: 0.7;
+}
+.sheet-sub:empty {
   display: none;
 }
-.card.pop {
-  animation: pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+.sheet-body {
+  overflow-y: auto;
+  margin-top: 12px;
+  -webkit-overflow-scrolling: touch;
 }
-@keyframes pop {
-  from {
-    transform: translateX(-50%) scale(0.4);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(-50%) scale(1);
-    opacity: 1;
-  }
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.tile {
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: #fff1c9;
+}
+.tile:nth-child(2n) {
+  background: #dff3ff;
+}
+.tile:nth-child(3n) {
+  background: #e7f8dc;
+}
+.tile-label {
+  font-size: 13px;
+  font-weight: 800;
+  opacity: 0.65;
+}
+.tile-value {
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.tile-extra {
+  font-size: 14px;
+  font-weight: 700;
+  color: #7a4fd0;
+}
+.secret {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: #ffe1ec;
+}
+.secret-text {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.secret-text.big {
+  font-size: 20px;
+}
+.secret-text.muted {
+  opacity: 0.7;
+}
+.section-title {
+  margin: 14px 0 6px;
+  font-size: 15px;
+  font-weight: 800;
+  opacity: 0.7;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  padding: 8px 14px;
+  border: 3px solid #e6dcc8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.chip.found {
+  border-color: var(--sun);
+  background: #fff6cf;
+}
+.chip.back {
+  margin-top: 12px;
+}
+
+/* ---------- 「はっけん！」のお知らせ ---------- */
+.toast {
+  position: fixed;
+  top: 28%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 22px;
+  border-radius: 999px;
+  background: var(--sun);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 800;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 6;
+}
+.toast.hidden {
+  display: none;
+}
+.toast.pop {
+  animation: toast 1.8s ease forwards;
+}
+@keyframes toast {
+  0% { transform: translateX(-50%) scale(0.3); opacity: 0; }
+  15% { transform: translateX(-50%) scale(1.1); opacity: 1; }
+  25% { transform: translateX(-50%) scale(1); }
+  80% { opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-30px); opacity: 0; }
 }
 
 /* ---------- 大きな丸ボタン ---------- */
@@ -189,7 +344,52 @@ body {
     right: 12px;
     font-size: 13px;
   }
-  .card {
-    bottom: calc(max(20px, env(safe-area-inset-bottom)) + 132px);
+  .title h1 {
+    font-size: 26px;
+  }
+  .title p {
+    display: none;
+  }
+  .badge {
+    top: auto;
+    bottom: calc(max(18px, env(safe-area-inset-bottom)) + 74px);
+    font-size: 14px;
+    padding: 7px 12px;
+  }
+}
+
+@media (min-width: 900px) {
+  .sheet {
+    left: auto;
+    right: 18px;
+    top: 96px;
+    bottom: auto;
+    width: 400px;
+    max-height: calc(100vh - 200px);
+    transform: none;
+  }
+  .sheet.pop {
+    animation: side-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes side-in {
+    from { transform: translateX(60px) scale(0.92); opacity: 0; }
+    to { transform: none; opacity: 1; }
+  }
+}
+@media (max-width: 899px) {
+  .tiles {
+    grid-template-columns: 1fr 1fr;
+  }
+  .sheet {
+    max-height: 50vh;
+  }
+}
+
+/* カードが出ているときは、下のボタンと言語切りかえをかくす */
+@media (max-width: 899px) {
+  body.sheet-open .controls,
+  body.sheet-open #lang,
+  body.sheet-open .badge {
+    visibility: hidden;
   }
 }

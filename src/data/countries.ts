@@ -1,6 +1,7 @@
 import { feature, neighbors } from 'topojson-client';
 import type { Topology, GeometryCollection } from 'topojson-specification';
-import type { Feature, Geometry } from 'geojson';
+import type { Feature, Geometry, Polygon } from 'geojson';
+import { geoArea, geoCentroid } from 'd3-geo';
 import isoCountries from 'i18n-iso-countries';
 import en from 'i18n-iso-countries/langs/en.json';
 import ja from 'i18n-iso-countries/langs/ja.json';
@@ -23,6 +24,11 @@ export interface Country {
   englishName: string;
   color: string;
   feature: Feature<Geometry>;
+  /** 国名を書く場所・カメラが飛んでいく場所（いちばん大きな島・陸地のまんなか） */
+  labelLat: number;
+  labelLon: number;
+  /** 面積（地球全体 = 4π） */
+  area: number;
 }
 
 /**
@@ -41,8 +47,12 @@ export async function loadCountries(): Promise<Country[]> {
   return collection.features.map((f, i) => {
     const numericId = geoms[i].id === undefined ? undefined : String(geoms[i].id);
     const alpha2 = numericId ? isoCountries.numericToAlpha2(numericId) : undefined;
+    const [labelLon, labelLat] = mainlandCentroid(f as Feature<Geometry>);
     return {
       index: i,
+      labelLat,
+      labelLon,
+      area: geoArea(f),
       numericId,
       alpha2,
       englishName: (geoms[i].properties as { name?: string } | undefined)?.name ?? '',
@@ -50,6 +60,26 @@ export async function loadCountries(): Promise<Country[]> {
       feature: f as Feature<Geometry>,
     };
   });
+}
+
+/**
+ * 国全体のまんなかだと、海外の島（フランス領ギアナ・アラスカなど）に引っぱられてずれるので、
+ * いちばん大きな陸地のまんなかを使う。
+ */
+function mainlandCentroid(f: Feature<Geometry>): [number, number] {
+  const g = f.geometry;
+  if (g.type !== 'MultiPolygon') return geoCentroid(f);
+  let best: Polygon | null = null;
+  let bestArea = -1;
+  for (const coords of g.coordinates) {
+    const poly: Polygon = { type: 'Polygon', coordinates: coords };
+    const a = geoArea(poly);
+    if (a > bestArea) {
+      bestArea = a;
+      best = poly;
+    }
+  }
+  return geoCentroid(best!);
 }
 
 /**

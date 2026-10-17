@@ -22,10 +22,21 @@
       <p data-i18n="subtitle"></p>
     </header>
 
-    <div id="country-card" class="card hidden">
-      <span id="country-flag" class="flag"></span>
-      <span id="country-name"></span>
-    </div>
+    <div id="found-badge" class="badge">⭐ <span data-i18n="found"></span> <b id="found-count">0</b></div>
+
+    <section id="sheet" class="sheet hidden" aria-live="polite">
+      <button id="sheet-close" class="sheet-close" aria-label="close">✕</button>
+      <div class="sheet-head">
+        <span id="sheet-icon" class="sheet-icon"></span>
+        <div>
+          <div id="sheet-title" class="sheet-title"></div>
+          <div id="sheet-sub" class="sheet-sub"></div>
+        </div>
+      </div>
+      <div id="sheet-body" class="sheet-body"></div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
 
     <nav class="controls">
       <button id="btn-zoom-in" aria-label="zoom in">＋</button>

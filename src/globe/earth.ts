@@ -3,7 +3,7 @@ import type { CountryTexture } from './countryTexture';
 
 export const EARTH_RADIUS = 1;
 /** 陸がどれくらい盛り上がるか（地球の半径に対する割合） */
-const LAND_HEIGHT = 0.008;
+const LAND_HEIGHT = 0.009;
 
 /** 色テクスチャ＋高さ地図を貼った地球本体 */
 export function createEarth(tex: CountryTexture): THREE.Mesh {
@@ -14,7 +14,7 @@ export function createEarth(tex: CountryTexture): THREE.Mesh {
     displacementMap: tex.heightTexture,
     displacementScale: LAND_HEIGHT,
     bumpMap: tex.heightTexture,
-    bumpScale: 3,
+    bumpScale: 6,
     roughness: 0.75,
     metalness: 0,
   });

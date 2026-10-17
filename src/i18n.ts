@@ -8,6 +8,23 @@ const STRINGS = {
     ko: '돌리고, 확대하고, 눌러 보세요!',
     zh: '转一转、放大、点一点！',
   },
+  capital: { ja: 'しゅと', en: 'Capital', ko: '수도', zh: '首都' },
+  population: { ja: 'じんこう', en: 'People', ko: '인구', zh: '人口' },
+  language: { ja: 'ことば', en: 'Language', ko: '언어', zh: '语言' },
+  hello: { ja: 'こんにちは', en: 'Say hello', ko: '인사', zh: '你好' },
+  food: { ja: 'たべもの', en: 'Food', ko: '음식', zh: '美食' },
+  secret: { ja: 'ひみつ', en: 'Fun fact', ko: '비밀', zh: '小秘密' },
+  meetHere: { ja: 'ここで会える！', en: 'Find them here!', ko: '여기서 만나요!', zh: '在这里找找看！' },
+  comingSoon: {
+    ja: 'この国のひみつカードは じゅんびちゅう！',
+    en: 'This country’s secret card is coming soon!',
+    ko: '이 나라의 비밀 카드는 준비 중이에요!',
+    zh: '这个国家的秘密卡片正在准备中！',
+  },
+  backToCountry: { ja: '国のカードへ', en: 'Back to country', ko: '나라 카드로', zh: '返回国家' },
+  found: { ja: 'みつけた', en: 'Found', ko: '발견', zh: '发现' },
+  newFind: { ja: 'あたらしく はっけん！', en: 'New discovery!', ko: '새로운 발견!', zh: '新发现！' },
+  ocean: { ja: '海', en: 'Ocean', ko: '바다', zh: '海洋' },
 } satisfies Record<string, Record<Lang, string>>;
 
 export type StringKey = keyof typeof STRINGS;
@@ -36,6 +53,21 @@ export function saveLang(lang: Lang) {
 
 export function t(key: StringKey, lang: Lang): string {
   return STRINGS[key][lang];
+}
+
+/** 人口（百万人）を、その言語で読みやすい形にする */
+export function formatPopulation(millions: number, lang: Lang): string {
+  if (lang === 'ja' || lang === 'zh') {
+    if (millions >= 100) return `約${(millions / 100).toFixed(1).replace(/\.0$/, '')}億人`;
+    return `約${Math.round(millions * 100)}万人`;
+  }
+  if (lang === 'ko') {
+    if (millions >= 100) return `약 ${(millions / 100).toFixed(1).replace(/\.0$/, '')}억 명`;
+    return `약 ${Math.round(millions * 100)}만 명`;
+  }
+  if (millions >= 1000) return `about ${(millions / 1000).toFixed(2)} billion`;
+  if (millions < 1) return `about ${Math.round(millions * 1000)},000`;
+  return `about ${millions} million`;
 }
 
 /** data-i18n="キー" が付いた要素の文字を、選んだ言語に入れ替える */
