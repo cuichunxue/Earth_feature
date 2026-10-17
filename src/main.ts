@@ -10,6 +10,7 @@ import { applyStaticTexts, detectLang, formatPopulation, saveLang, t, type Lang 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const LABEL_FONT = '"Baloo 2", "M PLUS Rounded 1c", system-ui, sans-serif';
 const ALL_SPOTS = [...LANDMARKS, ...ANIMALS];
+const RAD_TO_DEG = 180 / Math.PI;
 
 let lang: Lang = detectLang();
 let countries: Country[] = [];
@@ -184,15 +185,25 @@ function buildLabelSpecs(): LabelSpec[] {
   for (const c of countries) {
     const size = Math.sqrt(c.area);
     if (size < 0.004) continue; // とても小さな島はのせない
-    specs.push({
-      text: countryName(c, lang),
-      lat: c.labelLat,
-      lon: c.labelLon,
-      height: 0.011 + size * 0.04,
-      showBelow: 1.45 + size * 8,
-      hideBelow: size > 0.05 ? 1 + size * 2.5 : undefined,
-      style: 'country',
-    });
+    const height = 0.011 + size * 0.04;
+    const showBelow = 1.45 + size * 8;
+    const hideBelow = size > 0.05 ? 1 + size * 2.5 : undefined;
+    specs.push({ text: countryName(c, lang), lat: c.labelLat, lon: c.labelLon, height, showBelow, hideBelow, style: 'country' });
+    // 国名の下に、小さく人口を書く（ひみつカードがある国だけ）
+    const info = c.alpha2 ? COUNTRY_INFO[c.alpha2] : undefined;
+    if (info) {
+      specs.push({
+        text: `${t('population', lang)} ${formatPopulation(info.population, lang)}`,
+        lat: c.labelLat - RAD_TO_DEG * height * 1.05,
+        lon: c.labelLon,
+        height: height * 0.55,
+        showBelow: Math.min(showBelow, 2.6),
+        hideBelow,
+        style: 'sub',
+        anchorLat: c.labelLat,
+        anchorLon: c.labelLon,
+      });
+    }
   }
   for (const info of Object.values(COUNTRY_INFO)) {
     specs.push({

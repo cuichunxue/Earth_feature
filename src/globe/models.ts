@@ -853,6 +853,58 @@ function iceberg() {
   return b.build();
 }
 
+// =====================================================================
+// 動くもの（雲・飛行機・船・気球）
+// =====================================================================
+
+function cloud() {
+  const b = new Builder();
+  const w = '#ffffff';
+  b.add(gem(0.32), w, { p: [0, 0.3, 0], s: [1.2, 0.8, 1] });
+  b.add(gem(0.24), '#f4f8ff', { p: [0.32, 0.24, 0.05], s: [1.1, 0.8, 1] });
+  b.add(gem(0.22), '#f4f8ff', { p: [-0.32, 0.22, -0.04], s: [1.1, 0.8, 1] });
+  b.add(gem(0.2), w, { p: [0.08, 0.42, 0.12] });
+  return b.build();
+}
+
+function airplane() {
+  const b = new Builder();
+  const w = '#fbfbff';
+  b.add(cyl(0.07, 0.07, 0.8, 8), w, { p: [0, 0.1, 0], r: [0, 0, Math.PI / 2] });
+  b.add(cone(0.07, 0.16, 8), w, { p: [0.48, 0.1, 0], r: [0, 0, -Math.PI / 2] });
+  b.add(cone(0.07, 0.2, 8), w, { p: [-0.5, 0.1, 0], r: [0, 0, Math.PI / 2] });
+  b.add(box(0.18, 0.02, 0.95), '#e8eef7', { p: [0.02, 0.08, 0] }); // 主翼
+  b.add(box(0.1, 0.02, 0.36), '#e8eef7', { p: [-0.45, 0.12, 0] }); // 水平尾翼
+  b.add(box(0.14, 0.2, 0.02), '#e8452e', { p: [-0.47, 0.22, 0], r: [0, 0, 0.35] }); // 垂直尾翼
+  b.add(box(0.5, 0.03, 0.142), '#4f8fd9', { p: [0.05, 0.13, 0] }); // まど
+  for (const z of [-0.22, 0.22]) b.add(cyl(0.035, 0.035, 0.14, 6), '#b8c2d0', { p: [0.06, 0.04, z], r: [0, 0, Math.PI / 2] });
+  return b.build();
+}
+
+function ship() {
+  const b = new Builder();
+  b.add(box(0.9, 0.12, 0.26), '#d0452f', { p: [0, 0.06, 0] });
+  b.add(cone(0.13, 0.22, 4), '#d0452f', { p: [0.52, 0.06, 0], r: [0, Q, -Math.PI / 2], s: [1, 1, 0.7] });
+  b.add(box(0.95, 0.06, 0.28), '#2a2d38', { p: [0.02, 0.15, 0] });
+  b.add(box(0.3, 0.16, 0.2), '#fbfaf5', { p: [-0.25, 0.26, 0] });
+  b.add(cyl(0.04, 0.05, 0.16, 8), '#ffd23f', { p: [-0.25, 0.42, 0] });
+  for (let i = 0; i < 3; i++) b.add(box(0.14, 0.1, 0.18), ['#4f8fd9', '#3ecf8e', '#ff9f43'][i], { p: [0.05 + i * 0.15, 0.23, 0] }); // コンテナ
+  return b.build();
+}
+
+function balloon() {
+  const b = new Builder();
+  const colors = ['#ff6b5b', '#ffd23f', '#4fd6e8', '#b084f5'];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    // 球を8つの「くし形」に分けて、しま模様にする
+    b.add(new THREE.SphereGeometry(0.3, 2, 8, a, Math.PI / 4), colors[i % 4], { p: [0, 0.7, 0], s: [1, 1.15, 1] });
+  }
+  b.add(cone(0.16, 0.2, 8), '#ff6b5b', { p: [0, 0.38, 0], r: [Math.PI, 0, 0] });
+  b.add(box(0.12, 0.1, 0.12), '#a4743f', { p: [0, 0.12, 0] });
+  return b.build();
+}
+
 /** モデルの一覧。キーの名前で data/features.ts から呼び出します */
 export const MODEL_FACTORIES = {
   eiffel: () => latticeTower('#8b5e3c', '#7a5133', '#6b462c'),
@@ -917,6 +969,10 @@ export const MODEL_FACTORIES = {
   cactus,
   baobab,
   iceberg,
+  cloud,
+  airplane,
+  ship,
+  balloon,
 } satisfies Record<string, () => THREE.BufferGeometry>;
 
 export type ModelKind = keyof typeof MODEL_FACTORIES;

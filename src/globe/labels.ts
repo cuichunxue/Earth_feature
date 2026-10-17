@@ -16,7 +16,10 @@ export interface LabelSpec {
   showBelow: number;
   /** カメラがこの距離より近いと消える（大きすぎる文字をかくす） */
   hideBelow?: number;
-  style: 'country' | 'capital';
+  style: 'country' | 'capital' | 'sub';
+  /** 遠くで文字を大きくするときの中心（国名の下の人口は、国名と一緒に動くように） */
+  anchorLat?: number;
+  anchorLon?: number;
 }
 
 const FONT_PX = 56;
@@ -31,7 +34,7 @@ export class LabelLayer {
   constructor(specs: LabelSpec[], fontFamily: string) {
     // ---- 1) 文字の大きさを測って、アトラスの中の置き場所を決める（棚づめ） ----
     const measure = document.createElement('canvas').getContext('2d')!;
-    const font = (s: LabelSpec) => `800 ${s.style === 'capital' ? FONT_PX * 0.8 : FONT_PX}px ${fontFamily}`;
+    const font = (s: LabelSpec) => `800 ${s.style === 'country' ? FONT_PX : FONT_PX * 0.8}px ${fontFamily}`;
     const rowH = FONT_PX + PAD * 2;
     let x = 0;
     let y = 0;
@@ -58,9 +61,9 @@ export class LabelLayer {
     specs.forEach((s, i) => {
       const r = rects[i];
       ctx.font = font(s);
-      ctx.lineWidth = s.style === 'capital' ? 7 : 10;
-      ctx.strokeStyle = s.style === 'capital' ? 'rgba(30,25,60,0.85)' : 'rgba(42,31,74,0.9)';
-      ctx.fillStyle = s.style === 'capital' ? '#fff3b0' : '#fffaf0';
+      ctx.lineWidth = s.style === 'country' ? 10 : 7;
+      ctx.strokeStyle = s.style === 'country' ? 'rgba(42,31,74,0.9)' : 'rgba(30,25,60,0.85)';
+      ctx.fillStyle = s.style === 'capital' ? '#fff3b0' : s.style === 'sub' ? '#d9f1ff' : '#fffaf0';
       ctx.strokeText(s.text, r.x + PAD, r.y + r.h / 2);
       ctx.fillText(s.text, r.x + PAD, r.y + r.h / 2);
     });
@@ -81,6 +84,7 @@ export class LabelLayer {
     const north = new THREE.Vector3();
     const center = new THREE.Vector3();
     const Y = new THREE.Vector3(0, 1, 0);
+    const anchor = new THREE.Vector3();
 
     specs.forEach((s, i) => {
       const r = rects[i];
@@ -91,6 +95,8 @@ export class LabelLayer {
       const h = s.height;
       const w = (h * r.w) / r.h;
       center.copy(n).multiplyScalar(LIFT);
+      if (s.anchorLat !== undefined && s.anchorLon !== undefined) latLonToVector3(s.anchorLat, s.anchorLon, LIFT, anchor);
+      else anchor.copy(center);
       // 首都は「★」が首都の場所にくるように、左はしをそろえる
       const offset = s.style === 'capital' ? w / 2 - h * 0.3 : 0;
       const base = positions.length / 3;
@@ -105,7 +111,7 @@ export class LabelLayer {
           .addScaledVector(east, (sx * w) / 2 + offset)
           .addScaledVector(north, (sy * h) / 2);
         positions.push(p.x, p.y, p.z);
-        centers.push(center.x, center.y, center.z);
+        centers.push(anchor.x, anchor.y, anchor.z);
         uvs.push((r.x + (sx > 0 ? r.w : 0)) / ATLAS_W, 1 - (r.y + (sy > 0 ? 0 : r.h)) / atlasH);
         show.push(s.showBelow, s.hideBelow ?? 0);
       }

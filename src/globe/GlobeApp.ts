@@ -9,6 +9,7 @@ import { createStars } from './stars';
 import { latLonToVector3, vector3ToLatLon } from './geo';
 import { FeatureLayer } from './featureLayer';
 import { LabelLayer, type LabelSpec } from './labels';
+import { LifeLayer } from './lifeLayer';
 
 const MIN_DISTANCE = 1.1; // いちばん近づいたときのカメラ距離（地球の中心から）
 const MAX_DISTANCE = 7;
@@ -49,6 +50,7 @@ export class GlobeApp {
   private texture!: CountryTexture;
   private earth!: THREE.Mesh;
   private features!: FeatureLayer;
+  private life!: LifeLayer;
   private labels: LabelLayer | null = null;
   private pickSphere = new THREE.Mesh(new THREE.SphereGeometry(EARTH_RADIUS, 64, 32));
   private stars = createStars();
@@ -103,6 +105,8 @@ export class GlobeApp {
     this.scene.add(createAtmosphere());
     this.features = new FeatureLayer();
     this.scene.add(this.features.group);
+    this.life = new LifeLayer();
+    this.scene.add(this.life.group);
     this.renderer.setAnimationLoop(() => this.tick());
   }
 
@@ -327,10 +331,18 @@ export class GlobeApp {
 
     this.timer.update();
     const t = this.timer.getElapsed();
+    const dt = this.timer.getDelta();
     this.stars.update(t);
     const far = smoothstep(1.35, HOME_DISTANCE, dist);
-    this.features.update(t, Math.round((1 + far * 1.4) * 100) / 100);
-    this.labels?.update(dist, 1 + far * 0.9);
+    const grow = Math.round((1 + far * 1.4) * 100) / 100;
+    this.features.update(t, grow);
+    this.life.update(t, dist, grow);
+    const focus = vector3ToLatLon(this.rig.position);
+    this.texture.updateDetail(focus.lat, focus.lon, dist, dt);
+    this.texture.detailUniforms.time.value = t;
+    // 文字：遠いときは大きく、とても近いときは少し小さく（画面をうめつくさないように）
+    const near = 0.6 + 0.4 * smoothstep(MIN_DISTANCE, 1.7, dist);
+    this.labels?.update(dist, near * (1 + far * 0.9));
     this.renderer.render(this.scene, this.camera);
   }
 }

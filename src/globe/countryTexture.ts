@@ -1,111 +1,229 @@
 import * as THREE from 'three';
-import { geoEquirectangular, geoPath, geoGraticule10 } from 'd3-geo';
+import { geoBounds, geoEquirectangular, geoPath, geoGraticule10, type GeoPermissibleObjects } from 'd3-geo';
 import type { Country } from '../data/countries';
 import { BORDER_COLOR, COAST_COLOR, OCEAN_DEEP, OCEAN_MID, OCEAN_SHALLOW } from '../data/palette';
 
+const DEG = Math.PI / 180;
+/** 地球全体の絵の「1度あたりのピクセル数」の基準（幅4096のとき） */
+const BASE_PX_PER_DEG = 4096 / 360;
+
+/** 地図の一部分（経度・緯度の四角） */
+interface MapWindow {
+  centerLon: number;
+  latMin: number;
+  latMax: number;
+  lonSpan: number;
+}
+
 /**
  * 地球の「色の絵」を Canvas に描いて、テクスチャとして球に貼ります。
- * - colorCanvas : 国ごとの色・海・国境線
+ * - colorCanvas : 地球全体の絵（国ごとの色・海・国境線）
+ * - detailCanvas: ズームしたときだけ、見ている場所のまわりを高い解像度で描き直した絵。
+ *                 これで近づいても海岸線や国境がぼやけません。
  * - heightCanvas: 陸を白・海を黒にした高さ地図（陸がぷっくり盛り上がって見える）
  */
 export class CountryTexture {
   readonly colorCanvas: HTMLCanvasElement;
   readonly heightCanvas: HTMLCanvasElement;
+  readonly detailCanvas: HTMLCanvasElement;
   readonly colorTexture: THREE.CanvasTexture;
   readonly heightTexture: THREE.CanvasTexture;
+  readonly detailTexture: THREE.CanvasTexture;
+  /** シェーダーに渡す値：詳しい絵の位置（u最小, v最小, u幅, v幅）と、表示の強さ */
+  readonly detailUniforms = {
+    detailMap: { value: null as THREE.Texture | null },
+    detailRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+    detailMix: { value: 0 },
+    time: { value: 0 },
+  };
 
   private baseImage: HTMLCanvasElement;
   private width: number;
   private height: number;
+  private bounds: [[number, number], [number, number]][];
+  private selected: Country | null = null;
+  private detailWindow: MapWindow | null = null;
+  private lastDetailDraw = 0;
+  private lastFocus = new THREE.Vector2();
 
   constructor(private countries: Country[], maxTextureSize: number) {
     this.width = Math.min(4096, maxTextureSize);
     this.height = this.width / 2;
+    this.bounds = countries.map((c) => geoBounds(c.feature));
 
     this.colorCanvas = makeCanvas(this.width, this.height);
     this.baseImage = makeCanvas(this.width, this.height);
     this.heightCanvas = makeCanvas(this.width / 2, this.height / 2);
+    // スマホは少し小さめにして、描き直しを速くする
+    const detailSize = Math.min(maxTextureSize, Math.min(window.innerWidth, window.innerHeight) < 600 ? 1536 : 2048);
+    this.detailCanvas = makeCanvas(detailSize, detailSize);
 
-    this.drawBase();
+    this.paint(this.baseImage.getContext('2d')!, { centerLon: 0, latMin: -90, latMax: 90, lonSpan: 360 }, null);
     this.drawHeight();
-    this.compose(null);
+    this.compose();
 
     this.colorTexture = new THREE.CanvasTexture(this.colorCanvas);
     this.colorTexture.colorSpace = THREE.SRGBColorSpace;
     this.colorTexture.anisotropy = 8;
     this.heightTexture = new THREE.CanvasTexture(this.heightCanvas);
+    this.detailTexture = new THREE.CanvasTexture(this.detailCanvas);
+    this.detailTexture.colorSpace = THREE.SRGBColorSpace;
+    this.detailTexture.anisotropy = 8;
+    this.detailUniforms.detailMap.value = this.detailTexture;
   }
 
   /** 選んだ国をハイライトして描き直す（null で解除） */
   highlight(country: Country | null) {
-    this.compose(country);
+    this.selected = country;
+    this.compose();
     this.colorTexture.needsUpdate = true;
+    if (this.detailWindow) this.drawDetail(this.detailWindow);
+  }
+
+  /**
+   * 毎フレーム呼ぶ。カメラが近いときは、見ている場所のまわりの詳しい絵を用意する。
+   * 重い処理なので、カメラがほぼ止まっていて、今の絵から外れたときだけ描き直す。
+   */
+  updateDetail(focusLat: number, focusLon: number, cameraDistance: number, dt: number) {
+    const u = this.detailUniforms;
+    const wanted = cameraDistance < 2.0;
+    // フワッと切りかえる
+    const target = wanted && this.detailWindow ? 1 : 0;
+    u.detailMix.value += (target - u.detailMix.value) * Math.min(1, dt * 6);
+    if (!wanted) return;
+
+    const latSpan = THREE.MathUtils.clamp((cameraDistance - 1) * 115, 12, 70);
+    const moving = Math.hypot(focusLat - this.lastFocus.x, wrapLon(focusLon - this.lastFocus.y)) > 0.08;
+    this.lastFocus.set(focusLat, focusLon);
+
+    const w = this.detailWindow;
+    if (w) {
+      const curSpan = w.latMax - w.latMin;
+      const centerLat = (w.latMin + w.latMax) / 2;
+      const offLat = Math.abs(focusLat - centerLat) / curSpan;
+      const offLon = Math.abs(wrapLon(focusLon - w.centerLon)) / w.lonSpan;
+      const ok = offLat < 0.22 && offLon < 0.22 && latSpan / curSpan > 0.7 && latSpan / curSpan < 1.3;
+      if (ok) return;
+    }
+    const now = performance.now();
+    if (moving || now - this.lastDetailDraw < 300) return;
+
+    // 近いときはカメラが北を向いてかたむくので、少し北寄りに描く
+    const centerLat = THREE.MathUtils.clamp(focusLat + latSpan * 0.12, -90 + latSpan / 2, 90 - latSpan / 2);
+    const lonSpan = Math.min(360, latSpan / Math.max(0.25, Math.cos(centerLat * DEG)));
+    this.drawDetail({ centerLon: focusLon, latMin: centerLat - latSpan / 2, latMax: centerLat + latSpan / 2, lonSpan });
+    this.lastDetailDraw = performance.now();
+  }
+
+  private drawDetail(w: MapWindow) {
+    this.detailWindow = w;
+    this.paint(this.detailCanvas.getContext('2d')!, w, this.selected);
+    this.detailTexture.needsUpdate = true;
+    this.detailUniforms.detailRect.value.set(
+      (w.centerLon - w.lonSpan / 2 + 180) / 360,
+      (w.latMin + 90) / 180,
+      w.lonSpan / 360,
+      (w.latMax - w.latMin) / 180,
+    );
+  }
+
+  /**
+   * 地図を描く本体。地球全体（大きな絵）と、ズームしたときの一部分（詳しい絵）の両方で使う。
+   * 経度・緯度を「ラジアン」で描き、canvas の変形でピクセルに直している。
+   * 線の太さは、変形をもどしてから描くことでピクセル単位のままにしている。
+   */
+  private paint(ctx: CanvasRenderingContext2D, win: MapWindow, selected: Country | null) {
+    const W = ctx.canvas.width;
+    const H = ctx.canvas.height;
+    const kx = W / (win.lonSpan * DEG);
+    const ky = H / ((win.latMax - win.latMin) * DEG);
+    const pxPerDeg = ky * DEG;
+    const k = pxPerDeg / BASE_PX_PER_DEG; // 地球全体の絵とくらべて何倍細かいか
+    const lineK = Math.min(k, 1.8); // 線は太くなりすぎないように
+
+    const projection = geoEquirectangular()
+      .rotate([-win.centerLon, 0])
+      .scale(1)
+      .translate([0, 0])
+      .precision(0.001);
+    const path = geoPath(projection, ctx);
+    const transform = () => ctx.setTransform(kx, 0, 0, ky, (win.lonSpan * DEG * kx) / 2, win.latMax * DEG * ky);
+    const reset = () => ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const visible = this.countries.filter((_, i) => intersects(this.bounds[i], win));
+    const trace = (objects: GeoPermissibleObjects[]) => {
+      ctx.beginPath();
+      transform();
+      for (const o of objects) path(o);
+      reset();
+    };
+    const features = visible.map((c) => c.feature);
+
+    // 1) 海：極に向かって少し濃くなるグラデーション（地球全体で同じ色になるよう緯度から計算）
+    const latToY = (lat: number) => (win.latMax - lat) * pxPerDeg;
+    const ocean = ctx.createLinearGradient(0, latToY(90), 0, latToY(-90));
+    ocean.addColorStop(0, OCEAN_DEEP);
+    ocean.addColorStop(0.5, OCEAN_MID);
+    ocean.addColorStop(1, OCEAN_DEEP);
+    reset();
+    ctx.fillStyle = ocean;
+    ctx.fillRect(0, 0, W, H);
+
+    // 2) 経緯線（うっすら）
+    trace([geoGraticule10()]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+    ctx.lineWidth = 1.5 * lineK;
+    ctx.stroke();
+
+    // 3) 浅瀬：海岸のまわりに明るい水色をぼかして描く（重いので全部まとめて1回）
+    ctx.save();
+    ctx.filter = `blur(${Math.round(10 * Math.min(k, 3))}px)`;
+    trace(features);
+    ctx.strokeStyle = OCEAN_SHALLOW;
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 22 * Math.min(k, 3);
+    ctx.stroke();
+    ctx.restore();
+
+    // 4) 国の塗り
+    for (const c of visible) {
+      trace([c.feature]);
+      ctx.fillStyle = c.color;
+      ctx.fill();
+    }
+
+    // 5) 手ざわり感：ごく薄いノイズ
+    addNoise(ctx, W, H, 10);
+
+    // 6) 国境線
+    trace(features);
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = BORDER_COLOR;
+    ctx.lineWidth = 2.2 * lineK;
+    ctx.stroke();
+
+    // 7) 国境線の上に細い白線を重ねて、ぷっくりしたおもちゃっぽさを出す
+    ctx.strokeStyle = COAST_COLOR;
+    ctx.lineWidth = 1 * lineK;
+    ctx.globalAlpha = 0.35;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // 8) 選んだ国のハイライト
+    if (selected) {
+      trace([selected.feature]);
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3.5 * Math.min(k, 1.2);
+      ctx.stroke();
+    }
   }
 
   private projection(w: number, h: number) {
     return geoEquirectangular()
       .scale(w / (2 * Math.PI))
       .translate([w / 2, h / 2]);
-  }
-
-  private drawBase() {
-    const { width: w, height: h } = this;
-    const ctx = this.baseImage.getContext('2d')!;
-    const path = geoPath(this.projection(w, h), ctx);
-    const px = w / 4096; // 解像度に合わせて線の太さを調整
-
-    // 1) 海：上下（極）に向かって少し濃くなるグラデーション
-    const ocean = ctx.createLinearGradient(0, 0, 0, h);
-    ocean.addColorStop(0, OCEAN_DEEP);
-    ocean.addColorStop(0.5, OCEAN_MID);
-    ocean.addColorStop(1, OCEAN_DEEP);
-    ctx.fillStyle = ocean;
-    ctx.fillRect(0, 0, w, h);
-
-    // 2) 経緯線（うっすら）
-    ctx.beginPath();
-    path(geoGraticule10());
-    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
-    ctx.lineWidth = 1.5 * px;
-    ctx.stroke();
-
-    // 3) 浅瀬：海岸のまわりに明るい水色をぼかして描く
-    //    （ぼかしは重い処理なので、全部の国をまとめて1回だけかける）
-    ctx.save();
-    ctx.filter = `blur(${Math.round(10 * px)}px)`;
-    ctx.strokeStyle = OCEAN_SHALLOW;
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 22 * px;
-    ctx.beginPath();
-    for (const c of this.countries) path(c.feature);
-    ctx.stroke();
-    ctx.restore();
-
-    // 4) 国の塗り
-    for (const c of this.countries) {
-      ctx.beginPath();
-      path(c.feature);
-      ctx.fillStyle = c.color;
-      ctx.fill();
-    }
-
-    // 5) 手ざわり感：ごく薄いノイズ
-    addNoise(ctx, w, h, 10);
-
-    // 6) 国境線
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = BORDER_COLOR;
-    ctx.lineWidth = 2.2 * px;
-    ctx.beginPath();
-    for (const c of this.countries) path(c.feature);
-    ctx.stroke();
-
-    // 7) 国境線の上に細い白線を重ねて、ぷっくりしたおもちゃっぽさを出す
-    ctx.strokeStyle = COAST_COLOR;
-    ctx.lineWidth = 1 * px;
-    ctx.globalAlpha = 0.35;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
   }
 
   private drawHeight() {
@@ -152,20 +270,20 @@ export class CountryTexture {
     ctx.putImageData(img, 0, 0);
   }
 
-  private compose(selected: Country | null) {
+  /** 地球全体の絵に、選んだ国のハイライトを重ねる */
+  private compose() {
     const ctx = this.colorCanvas.getContext('2d')!;
     ctx.drawImage(this.baseImage, 0, 0);
-    if (!selected) return;
-
+    if (!this.selected) return;
     const path = geoPath(this.projection(this.width, this.height), ctx);
     const px = this.width / 4096;
     ctx.beginPath();
-    path(selected.feature);
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    path(this.selected.feature);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
     ctx.fill();
     ctx.lineJoin = 'round';
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 6 * px;
+    ctx.lineWidth = 4 * px;
     ctx.stroke();
   }
 }
@@ -220,6 +338,20 @@ function valueNoise(w: number, h: number): Float32Array {
     }
   }
   return out;
+}
+
+function wrapLon(d: number) {
+  return ((((d + 180) % 360) + 360) % 360) - 180;
+}
+
+/** 国の範囲（geoBounds）が、描く四角とかさなるか */
+function intersects([[w, s], [e, n]]: [[number, number], [number, number]], win: MapWindow) {
+  if (n < win.latMin || s > win.latMax) return false;
+  if (win.lonSpan >= 359) return true;
+  const width = e >= w ? e - w : e + 360 - w; // 日付変更線をまたぐ国もある
+  if (width > 300) return true;
+  const center = w + width / 2;
+  return Math.abs(wrapLon(center - win.centerLon)) <= (width + win.lonSpan) / 2 + 1;
 }
 
 function makeCanvas(w: number, h: number) {
