@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { ANIMALS, ANIMAL_SIZE, LANDMARKS, LANDMARK_SIZE, SCENERY, type FeatureSpot } from '../data/features';
 import { MODEL_FACTORIES, type ModelKind } from './models';
 import { latLonToVector3 } from './geo';
+import { createAnimalMaterial } from './animalMaterial';
+import { ANIMAL_FACTORIES, buildAnimal } from './animals';
 
 /** 再現できる乱数（毎回同じ場所に木や動物が並ぶように） */
 function seeded(seed: number) {
@@ -44,15 +46,33 @@ interface Instance extends Placement {
  * 動物はそれぞれのすみかのまわりを、ゆっくり歩き回る（向きも進む方向に変わる）。
  * 動物の足もとには、ふんわりしたかげを置いて「地面に立っている」感じを出す。
  */
+interface AnimalGroup {
+  items: Instance[];
+  homes: THREE.Vector3[];
+  tints: THREE.Color[];
+  near: THREE.InstancedMesh;
+  far: THREE.InstancedMesh;
+  nearAnim: THREE.InstancedBufferAttribute;
+  farAnim: THREE.InstancedBufferAttribute;
+  /** 描いている順番 → items の番号（タップしたときに、どの動物か調べるため） */
+  nearOrder: number[];
+  farOrder: number[];
+}
+
 export class FeatureLayer {
   readonly group = new THREE.Group();
   /** タップで調べられるメッシュ（景色の木などは含まない） */
   readonly pickables: THREE.InstancedMesh[] = [];
   private spotsByMesh = new Map<THREE.InstancedMesh, (FeatureSpot | null)[]>();
-  private all: { mesh: THREE.InstancedMesh; items: Instance[]; moving: boolean }[] = [];
+  private orderByMesh = new Map<THREE.InstancedMesh, { group: AnimalGroup; near: boolean }>();
+  /** 動かないもの（ランドマーク・木など） */
+  private statics: { mesh: THREE.InstancedMesh; items: Instance[] }[] = [];
+  /** 動物（近く用の細かいモデル ＋ 遠く用の軽いモデル） */
+  private animals: AnimalGroup[] = [];
   private shadows: THREE.InstancedMesh;
-  private shadowItems: Instance[] = [];
+  private shadowItems: { it: Instance; home: THREE.Vector3 }[] = [];
   private lastGrow = -1;
+  private animalUniforms = { uTime: { value: 0 }, uWalkAll: { value: 0 } };
 
   constructor() {
     const rand = seeded(42);
@@ -105,18 +125,61 @@ export class FeatureLayer {
     }
 
     const material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.75 });
+    const animalMaterial = createAnimalMaterial(this.animalUniforms);
     for (const [kind, items] of byKind) {
-      const mesh = new THREE.InstancedMesh(MODEL_FACTORIES[kind](), material, items.length);
-      mesh.name = kind;
-      mesh.frustumCulled = false;
-      this.group.add(mesh);
-      const spots = items.map((p) => p.spot);
-      if (spots.some(Boolean)) {
-        this.pickables.push(mesh);
-        this.spotsByMesh.set(mesh, spots);
+      const isAnimal = items[0].spot?.type === 'animal' && kind in ANIMAL_FACTORIES;
+      if (!isAnimal) {
+        const mesh = new THREE.InstancedMesh(MODEL_FACTORIES[kind](), material, items.length);
+        mesh.name = kind;
+        mesh.frustumCulled = false;
+        this.group.add(mesh);
+        this.statics.push({ mesh, items });
+        const spots = items.map((p) => p.spot);
+        if (spots.some(Boolean)) {
+          this.pickables.push(mesh);
+          this.spotsByMesh.set(mesh, spots);
+        }
+        continue;
       }
-      this.all.push({ mesh, items, moving: items.some((p) => p.motion !== 'fixed') });
-      for (const it of items) if (it.spot?.type === 'animal' && !OCEAN.has(kind)) this.shadowItems.push(it);
+      // 動物：近く用（細かい）と遠く用（軽い）の2つのモデル
+      const make = (level: number) => {
+        const geo = buildAnimal(kind as keyof typeof ANIMAL_FACTORIES, level);
+        const anim = new THREE.InstancedBufferAttribute(new Float32Array(items.length * 2), 2);
+        anim.setUsage(THREE.DynamicDrawUsage);
+        geo.setAttribute('aAnim', anim);
+        const mesh = new THREE.InstancedMesh(geo, animalMaterial, items.length);
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        mesh.setColorAt(0, new THREE.Color(1, 1, 1));
+        mesh.name = kind;
+        mesh.frustumCulled = false;
+        mesh.count = 0;
+        this.group.add(mesh);
+        this.pickables.push(mesh);
+        return { mesh, anim };
+      };
+      const near = make(1);
+      const far = make(0.4);
+      const group: AnimalGroup = {
+        items,
+        homes: items.map((it) => latLonToVector3(it.lat, it.lon, 1)),
+        // 1匹ずつ、ほんの少しちがう毛の色
+        tints: items.map(() => {
+          const k = 0.93 + rand() * 0.14;
+          return new THREE.Color(k, k * (0.98 + rand() * 0.04), k);
+        }),
+        near: near.mesh,
+        far: far.mesh,
+        nearAnim: near.anim,
+        farAnim: far.anim,
+        nearOrder: [],
+        farOrder: [],
+      };
+      this.animals.push(group);
+      this.orderByMesh.set(near.mesh, { group, near: true });
+      this.orderByMesh.set(far.mesh, { group, near: false });
+      group.items.forEach((it, i) => {
+        if (!OCEAN.has(kind)) this.shadowItems.push({ it, home: group.homes[i] });
+      });
     }
 
     // 足もとのかげ（中心がこくて、まわりがふんわり）
@@ -130,28 +193,77 @@ export class FeatureLayer {
     this.shadows.frustumCulled = false;
     this.shadows.renderOrder = 1;
     this.group.add(this.shadows);
-    this.update(0, 1);
   }
 
   spotFor(mesh: THREE.Object3D, instanceId: number): FeatureSpot | null {
+    const o = this.orderByMesh.get(mesh as THREE.InstancedMesh);
+    if (o) {
+      const idx = (o.near ? o.group.nearOrder : o.group.farOrder)[instanceId];
+      return idx === undefined ? null : o.group.items[idx].spot;
+    }
     return this.spotsByMesh.get(mesh as THREE.InstancedMesh)?.[instanceId] ?? null;
   }
 
   /**
    * 毎フレームの更新。
    * grow: 遠くから見ているときは大きくして、宇宙からでもランドマークがわかるようにする
+   * cameraPos・focus: 地球の裏側の動物は描かない。見ている場所の近くだけ細かいモデルにする
    */
-  update(time: number, grow: number) {
-    const growChanged = grow !== this.lastGrow;
-    for (const a of this.all) {
-      if (!a.moving && !growChanged) continue;
-      a.items.forEach((it, i) => a.mesh.setMatrixAt(i, this.matrixFor(it, time, grow, false)));
-      a.mesh.instanceMatrix.needsUpdate = true;
-      a.mesh.boundingSphere = null; // タップ判定用に作り直してもらう
+  update(time: number, grow: number, cameraPos: THREE.Vector3, focus: THREE.Vector3) {
+    this.animalUniforms.uTime.value = time;
+
+    // 動かないもの：大きさが変わったときだけ計算し直す
+    if (grow !== this.lastGrow) {
+      for (const st of this.statics) {
+        st.items.forEach((it, i) => st.mesh.setMatrixAt(i, this.matrixFor(it, time, grow, false)));
+        st.mesh.instanceMatrix.needsUpdate = true;
+        st.mesh.boundingSphere = null;
+      }
     }
-    this.shadowItems.forEach((it, i) => this.shadows.setMatrixAt(i, this.matrixFor(it, time, grow, true)));
-    this.shadows.instanceMatrix.needsUpdate = true;
     this.lastGrow = grow;
+
+    const d = cameraPos.length();
+    const camDir = cameraPos.clone().normalize();
+    const horizon = 1 / d - 0.12; // これより小さいと地球の裏側
+    const nearMode = grow < 1.25;
+    const nearCos = Math.cos(THREE.MathUtils.degToRad(THREE.MathUtils.clamp((d - 1) * 75, 8, 45)));
+    const focusDir = focus.clone().normalize();
+
+    for (const g of this.animals) {
+      g.nearOrder.length = 0;
+      g.farOrder.length = 0;
+      g.items.forEach((it, i) => {
+        const home = g.homes[i];
+        if (home.dot(camDir) < horizon) return;
+        const useNear = nearMode && home.dot(focusDir) > nearCos;
+        const mesh = useNear ? g.near : g.far;
+        const order = useNear ? g.nearOrder : g.farOrder;
+        const anim = useNear ? g.nearAnim : g.farAnim;
+        const k = order.length;
+        mesh.setMatrixAt(k, this.matrixFor(it, time, grow, false));
+        mesh.setColorAt(k, g.tints[i]);
+        anim.setXY(k, it.phase * 3, it.motion === 'wander' ? 1 : 0);
+        order.push(i);
+      });
+      for (const [mesh, anim, order] of [
+        [g.near, g.nearAnim, g.nearOrder],
+        [g.far, g.farAnim, g.farOrder],
+      ] as const) {
+        mesh.count = order.length;
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        anim.needsUpdate = true;
+        mesh.boundingSphere = null; // タップ判定用に作り直してもらう
+      }
+    }
+
+    let k = 0;
+    for (const { it, home } of this.shadowItems) {
+      if (home.dot(camDir) < horizon) continue;
+      this.shadows.setMatrixAt(k++, this.matrixFor(it, time, grow, true));
+    }
+    this.shadows.count = k;
+    this.shadows.instanceMatrix.needsUpdate = true;
   }
 
   private tmp = {

@@ -341,7 +341,7 @@ export class GlobeApp {
     this.stars.update(t);
     const far = smoothstep(1.35, HOME_DISTANCE, dist);
     const grow = Math.round((1 + far * 1.4) * 100) / 100;
-    this.features.update(t, grow);
+    this.features.update(t, grow, this.camera.position, this.rig.position);
     this.life.update(t, dist, grow);
     const focus = vector3ToLatLon(this.rig.position);
     this.texture.updateDetail(focus.lat, focus.lon, dist, dt);

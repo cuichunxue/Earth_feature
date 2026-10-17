@@ -40,7 +40,8 @@ src/
     geo.ts                 緯度経度 ⇔ 3D座標 の変換
     modelKit.ts            3Dモデル作りの道具箱（箱・円柱・球をまとめて1つの形にする）
     models.ts              ランドマーク・景色・乗り物のローポリ3Dモデル
-    animals.ts             動物のローポリ3Dモデル（約65種。目・2トーン・もようまで作りこみ）
+    animals.ts             動物の3Dモデル（約65種。胸・おなか・おしり、ひざで曲がる足、背中から おなかへのグラデーション）
+    animalMaterial.ts      動物の見た目と動き（なめらかな陰影、歩くときに足をふる・しっぽをゆらす）
     lifeLayer.ts           雲・飛行機・船・気球など、動くもの
     touchControls.ts       指でつかんで回す・はじく・ピンチでズームする操作
     featureLayer.ts        モデルを地球の上に並べる（InstancedMesh でまとめて描く）
